@@ -9,6 +9,7 @@ import time
 def get_wayback_captures(url, from_date=None, to_date=None, limit=100):
     """
     Fetch historical snapshots of a URL from the Wayback Machine CDX API.
+    Retries on timeout or temporary failure.
     """
     cdx_url = "https://web.archive.org/cdx/search/cdx"
     params = {
@@ -24,28 +25,42 @@ def get_wayback_captures(url, from_date=None, to_date=None, limit=100):
     if to_date:
         params["to"] = to_date
 
-    try:
-        response = requests.get(cdx_url, params=params, timeout=15)
-        response.raise_for_status()
-        data = response.json()
-        if not data or len(data) <= 1:
-            return []
-        
-        # The first row is the header list
-        headers = data[0]
-        rows = data[1:]
-        
-        captures = []
-        for row in rows:
-            capture = dict(zip(headers, row))
-            ts_str = capture["timestamp"]
-            capture["datetime"] = datetime.datetime.strptime(ts_str, "%Y%m%d%H%M%S")
-            captures.append(capture)
+    max_retries = 3
+    timeout = 30
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"Querying Wayback CDX API (Attempt {attempt+1}/{max_retries})...")
+            response = requests.get(cdx_url, params=params, timeout=timeout)
+            response.raise_for_status()
+            data = response.json()
+            if not data or len(data) <= 1:
+                return []
             
-        return captures
-    except Exception as e:
-        print(f"Error fetching CDX captures: {e}")
-        return []
+            # The first row is the header list
+            headers = data[0]
+            rows = data[1:]
+            
+            captures = []
+            for row in rows:
+                capture = dict(zip(headers, row))
+                ts_str = capture["timestamp"]
+                capture["datetime"] = datetime.datetime.strptime(ts_str, "%Y%m%d%H%M%S")
+                captures.append(capture)
+                
+            return captures
+        except requests.exceptions.Timeout as te:
+            print(f"Timeout querying CDX API on attempt {attempt+1}: {te}")
+            if attempt < max_retries - 1:
+                time.sleep(3)
+                timeout += 15  # increase timeout on retry
+        except Exception as e:
+            print(f"Error querying CDX API on attempt {attempt+1}: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(3)
+            else:
+                break
+    return []
 
 def fetch_snapshot_html(timestamp, url):
     """
