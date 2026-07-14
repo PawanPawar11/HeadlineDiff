@@ -245,13 +245,32 @@ def scrape_topic_headlines_from_sections(domain, date_str, query):
         params["from"] = from_dt
         params["to"] = to_dt
         
-        try:
-            response = requests.get(cdx_url, params=params, timeout=15)
-            response.raise_for_status()
-            data = response.json()
-            if not data or len(data) <= 1:
-                continue
+        max_retries = 3
+        timeout = 30
+        data = None
+        
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(cdx_url, params=params, timeout=timeout)
+                response.raise_for_status()
+                data = response.json()
+                break  # Success, exit retry loop
+            except requests.exceptions.Timeout:
+                print(f"Timeout querying section CDX for {section_url} on attempt {attempt+1}")
+                if attempt < max_retries - 1:
+                    time.sleep(3)
+                    timeout += 15
+            except Exception as e:
+                print(f"Error querying section CDX for {section_url} on attempt {attempt+1}: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(3)
+                else:
+                    break
+        
+        if not data or len(data) <= 1:
+            continue
             
+        try:
             # Use the closest snapshot
             ts, orig_url = data[1][0], data[1][1]
             print(f"Fetching section snapshot for {section_url} at {ts}...")
@@ -283,12 +302,10 @@ def scrape_topic_headlines_from_sections(domain, date_str, query):
                     # Clean up URL (sometimes has wayback prefix, so strip it)
                     clean_href = href
                     if "/web/" in href:
-                        # e.g., /web/20220908173259/http://cnn.com/... -> http://cnn.com/...
                         match = re.search(r'/web/\d+/(https?://.*)$', href)
                         if match:
                             clean_href = match.group(1)
                         else:
-                            # Relative path after wayback prefix
                             match_rel = re.search(r'/web/\d+/(.*)$', href)
                             if match_rel:
                                 clean_href = urljoin(f"https://{domain}", match_rel.group(1))
@@ -308,6 +325,6 @@ def scrape_topic_headlines_from_sections(domain, date_str, query):
                         
             time.sleep(1.0) # rate-limiting friendly
         except Exception as e:
-            print(f"Error scraping section {section_url} for date {date_str}: {e}")
+            print(f"Error parsing section {section_url} elements: {e}")
             
     return found_headlines

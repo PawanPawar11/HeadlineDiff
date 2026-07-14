@@ -19,8 +19,8 @@ def get_gemini_model():
     if not api_key:
         return None
     try:
-        # Use gemini-1.5-flash for fast and cost-effective text analysis
-        return genai.GenerativeModel("gemini-1.5-flash")
+        # Use gemini-3.5-flash for fast and cost-effective text analysis
+        return genai.GenerativeModel("gemini-3.5-flash")
     except Exception as e:
         print(f"Error initializing Gemini model: {e}")
         return None
